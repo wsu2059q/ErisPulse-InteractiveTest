@@ -1,0 +1,15 @@
+[project]
+name = "ErisPulse-InteractiveTest"
+version = "1.0.0"
+description = "ErisPulse 交互式对话与 OneBot12 消息构建器功能测试模块"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [ { name = "ErisPulse" } ]
+dependencies = []
+
+[project.urls]
+"homepage" = "https://github.com/ErisPulse/InteractiveTest"
+
+[project.entry-points."erispulse.module"]
+"InteractiveTest" = "InteractiveTest:Main"
