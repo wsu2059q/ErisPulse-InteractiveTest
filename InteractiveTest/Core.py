@@ -50,6 +50,7 @@ class Main(BaseModule):
         self._register_event_info_commands()
         self._register_storage_commands()
         self._register_conversation_commands()
+        self._register_echo_commands()
 
     # ----------------------------------------------------------
     # 交互式对话命令
@@ -520,8 +521,107 @@ class Main(BaseModule):
     # 事件信息命令
     # ----------------------------------------------------------
 
+    # ----------------------------------------------------------
+    # Echo 模式
+    # ----------------------------------------------------------
+
+    def _register_echo_commands(self):
+        @command("it.echo", group="InteractiveTest", help="单次回显完整事件原始数据")
+        async def echo_handler(event):
+            await self._do_echo(event)
+
+        @command("it.echo_on", group="InteractiveTest", help="开启持续 echo 模式")
+        async def echo_on_handler(event):
+            user_id = event.get_user_id()
+            echo_users = self.storage.get("itest:echo_users", [])
+            if user_id in echo_users:
+                await event.reply("[echo] 已处于开启状态")
+                return
+            echo_users.append(user_id)
+            self.storage.set("itest:echo_users", echo_users)
+            await event.reply(
+                "[echo] 持续 echo 已开启，所有收到的事件都将回显。使用 /it.echo_off 关闭"
+            )
+
+        @command("it.echo_off", group="InteractiveTest", help="关闭持续 echo 模式")
+        async def echo_off_handler(event):
+            user_id = event.get_user_id()
+            echo_users = self.storage.get("itest:echo_users", [])
+            if user_id not in echo_users:
+                await event.reply("[echo] 当前未开启")
+                return
+            echo_users.remove(user_id)
+            self.storage.set("itest:echo_users", echo_users)
+            await event.reply("[echo] 持续 echo 已关闭")
+
+    async def _do_echo(self, event):
+        import json
+
+        event_dict = event.to_dict()
+        raw = event.get_raw()
+        raw_type = event.get_raw_type()
+        platform = event.get_platform()
+
+        filtered = {
+            k: v for k, v in event_dict.items() if not k.startswith(f"{platform}_raw")
+        }
+        if f"{platform}_raw_type" in filtered:
+            del filtered[f"{platform}_raw_type"]
+
+        lines = [
+            "═══════════ it.echo ═══════════",
+            f"事件类型: {event.get_type()} | 详细类型: {event.get_detail_type()}",
+            f"平台: {platform} | 机器人: {event.get_self_user_id()}",
+            f"时间戳: {event.get_time()}",
+            "",
+            "── 标准化事件字典 ──",
+        ]
+
+        try:
+            lines.append(
+                json.dumps(filtered, ensure_ascii=False, indent=2, default=str)
+            )
+        except Exception:
+            lines.append(str(event_dict))
+
+        if raw:
+            lines.append("")
+            lines.append(f"── 平台原始数据 (raw_type: {raw_type}) ──")
+            try:
+                lines.append(json.dumps(raw, ensure_ascii=False, indent=2, default=str))
+            except Exception:
+                lines.append(str(raw))
+
+        if event.get_message():
+            lines.append("")
+            lines.append("── 消息段 ──")
+            try:
+                lines.append(
+                    json.dumps(
+                        event.get_message(), ensure_ascii=False, indent=2, default=str
+                    )
+                )
+            except Exception:
+                lines.append(str(event.get_message()))
+
+        output = "\n".join(lines)
+        max_len = 4000
+        if len(output) > max_len:
+            parts = []
+            while output:
+                parts.append(output[:max_len])
+                output = output[max_len:]
+            for i, part in enumerate(parts):
+                header = f"[echo {i + 1}/{len(parts)}]" if len(parts) > 1 else "[echo]"
+                await event.reply(f"{header}\n{part}")
+        else:
+            await event.reply(output)
+
+    # ----------------------------------------------------------
+    # 事件信息命令
+    # ----------------------------------------------------------
+
     def _register_event_info_commands(self):
-        @command("it.event_info", group="InteractiveTest", help="查看完整事件信息")
         async def event_info_handler(event):
             info = (
                 f"[event_info] 事件详情:\n"
@@ -749,6 +849,11 @@ class Main(BaseModule):
                 f"[消息日志] {platform}/{location} {user_id}: "
                 f"{'[CMD] ' if is_cmd else ''}{text[:80]}"
             )
+
+            if not is_cmd:
+                echo_users = self.storage.get("itest:echo_users", [])
+                if user_id in echo_users:
+                    await self._do_echo(event)
 
     # ============================================================
     # 通知事件处理器
